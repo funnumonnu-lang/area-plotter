@@ -265,6 +265,8 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
       <span class="pct" id="zPct">100%</span>
       <button id="zIn" title="拡大">＋</button>
       <button id="zFit" title="全体表示" style="font-size:11px;width:38px">Fit</button>
+      <button id="rotL" title="左に90°回転" style="font-size:13px">⟲</button>
+      <button id="rotR" title="右に90°回転" style="font-size:13px">⟳</button>
     </div>
 
     <div id="hint" class="off"></div>
@@ -335,7 +337,7 @@ const S = {
 };
 
 function pageData(n = S.pageNum) {
-  if (!S.pages[n]) S.pages[n] = { calib: null, shapes: [], seq: { rect: 0, poly: 0 } };
+  if (!S.pages[n]) S.pages[n] = { calib: null, shapes: [], seq: { rect: 0, poly: 0 }, rot: 0 };
   return S.pages[n];
 }
 
@@ -474,7 +476,11 @@ async function renderPage() {
   const c = document.createElement('canvas');
   c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
   await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-  S.baseCanvas = c;
+  // ページ切替時、保存済みの回転角を再適用(座標は既に回転後の空間で保持)
+  let out = c;
+  const rot = pageData().rot || 0;
+  for (let i = 0; i < rot / 90; i++) out = rotateCanvas90(out, true);
+  S.baseCanvas = out;
   afterLoad();
 }
 
@@ -520,6 +526,35 @@ function zoomAt(sx, sy, factor) {
 $('zIn').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, 1.25);
 $('zOut').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, 0.8);
 $('zFit').onclick = fitView;
+$('rotL').onclick = () => rotatePage(false);
+$('rotR').onclick = () => rotatePage(true);
+
+/* ---------- 回転 ---------- */
+function rotateCanvas90(src, cw) {
+  const c = document.createElement('canvas');
+  c.width = src.height; c.height = src.width;
+  const g = c.getContext('2d');
+  if (cw) { g.translate(c.width, 0); g.rotate(Math.PI / 2); }
+  else { g.translate(0, c.height); g.rotate(-Math.PI / 2); }
+  g.drawImage(src, 0, 0);
+  return c;
+}
+function rotatePage(cw) {
+  if (!S.baseCanvas) return;
+  const W = S.baseCanvas.width, H = S.baseCanvas.height;
+  S.baseCanvas = rotateCanvas90(S.baseCanvas, cw);
+  const pd = pageData();
+  pd.rot = ((pd.rot || 0) + (cw ? 90 : 270)) % 360;
+  // 既存の図形・基準線も同じ回転で座標変換(面積は不変)
+  const f = cw ? p => ({ x: H - p.y, y: p.x }) : p => ({ x: p.y, y: W - p.x });
+  for (const sh of pd.shapes) sh.points = sh.points.map(f);
+  if (pd.calib) { pd.calib.p1 = f(pd.calib.p1); pd.calib.p2 = f(pd.calib.p2); }
+  if (S.pendingCalib) { S.pendingCalib.p1 = f(S.pendingCalib.p1); S.pendingCalib.p2 = f(S.pendingCalib.p2); }
+  S.drawing = null;
+  S.dragging = null;
+  fitView();
+  refreshUI();
+}
 
 wrap.addEventListener('wheel', e => {
   if (!S.baseCanvas) return;

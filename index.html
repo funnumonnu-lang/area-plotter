@@ -572,6 +572,7 @@ function setTool(t) {
   if (t === 'calib') setHint('基準線: 始点 → 終点をクリック(Shiftで水平/垂直スナップ)', true);
   else if (t === 'rect') setHint('四角形: ドラッグして範囲を指定');
   else if (t === 'poly') setHint('多角形: クリックで頂点を追加 / ダブルクリック・Enterで確定 / Escで取消');
+  else if (t === 'select') setHint('選択: クリックで選択 / 図形をドラッグで移動 / □頂点をドラッグでサイズ変更');
   else setHint('');
   draw();
 }
@@ -648,9 +649,20 @@ stage.addEventListener('mousedown', e => {
   }
 
   if (S.tool === 'select') {
+    // 選択中図形の頂点ハンドルを優先判定(サイズ変更)
+    if (S.selId != null) {
+      const sel = pageData().shapes.find(s => s.id === S.selId);
+      if (sel) {
+        const vi = hitVertex(sel, sp);
+        if (vi >= 0) {
+          S.dragging = { mode: 'vertex', shape: sel, idx: vi, orig: sel.points.map(p => ({ ...p })) };
+          return;
+        }
+      }
+    }
     const sh = hitShape(w);
     S.selId = sh ? sh.id : null;
-    if (sh) S.dragging = { shape: sh, start: w, orig: sh.points.map(p => ({ ...p })) };
+    if (sh) S.dragging = { mode: 'move', shape: sh, start: w, orig: sh.points.map(p => ({ ...p })) };
     refreshUI();
   }
 });
@@ -669,8 +681,12 @@ stage.addEventListener('mousemove', e => {
   }
   if (S.dragging) {
     const d = S.dragging;
-    const dx = w.x - d.start.x, dy = w.y - d.start.y;
-    d.shape.points = d.orig.map(p => ({ x: p.x + dx, y: p.y + dy }));
+    if (d.mode === 'vertex') {
+      applyVertexDrag(d, w, e.shiftKey);
+    } else {
+      const dx = w.x - d.start.x, dy = w.y - d.start.y;
+      d.shape.points = d.orig.map(p => ({ x: p.x + dx, y: p.y + dy }));
+    }
     refreshUI(false);
     draw();
     return;
@@ -684,7 +700,13 @@ stage.addEventListener('mousemove', e => {
     }
     draw();
   } else if (S.tool === 'select') {
-    stage.style.cursor = hitShape(w) ? 'move' : 'default';
+    let cur = 'default';
+    if (S.selId != null) {
+      const sel = pageData().shapes.find(s => s.id === S.selId);
+      if (sel && hitVertex(sel, sp) >= 0) cur = 'crosshair';
+    }
+    if (cur === 'default' && hitShape(w)) cur = 'move';
+    stage.style.cursor = cur;
   }
 });
 
@@ -729,6 +751,39 @@ function hitShape(w) {
   const sh = pageData().shapes;
   for (let i = sh.length - 1; i >= 0; i--) if (pointInPoly(w, sh[i].points)) return sh[i];
   return null;
+}
+function hitVertex(shape, sp) { // sp: 画面座標。近い頂点のインデックスを返す
+  for (let i = 0; i < shape.points.length; i++) {
+    const s = worldToScreen(shape.points[i]);
+    if (Math.hypot(s.x - sp.x, s.y - sp.y) < 9) return i;
+  }
+  return -1;
+}
+function applyVertexDrag(d, w, shift) {
+  const sh = d.shape, idx = d.idx, o = d.orig;
+  if (sh.type === 'rect' && o.length === 4) {
+    // 対角の頂点を固定し、矩形を維持したままサイズ変更
+    const opp = o[(idx + 2) % 4];
+    const n1 = (idx + 1) % 4, n2 = (idx + 3) % 4;
+    const pts = sh.points;
+    pts[idx] = { x: w.x, y: w.y };
+    pts[(idx + 2) % 4] = { ...opp };
+    if (Math.abs(o[n1].x - o[idx].x) < 0.001) {
+      pts[n1] = { x: w.x, y: opp.y };
+      pts[n2] = { x: opp.x, y: w.y };
+    } else {
+      pts[n1] = { x: opp.x, y: w.y };
+      pts[n2] = { x: w.x, y: opp.y };
+    }
+  } else {
+    // 多角形は掴んだ頂点のみ移動(Shiftで前の頂点に対し水平/垂直)
+    let p = w;
+    if (shift) {
+      const prev = o[(idx - 1 + o.length) % o.length];
+      p = snapAxis(prev, w);
+    }
+    sh.points[idx] = { x: p.x, y: p.y };
+  }
 }
 
 /* ---------- 図形 ---------- */

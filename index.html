@@ -192,6 +192,37 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
 .modal .btns .ok:hover{background:#cf4a24}
 .modal .pxInfo{font-family:var(--mono);font-size:11px;color:#9aa5b5;margin-bottom:12px}
 
+.shapeItem .row3{padding-left:19px}
+.shapeItem select.cat{
+  width:100%;font-family:var(--sans);font-size:11.5px;padding:4px 6px;
+  border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink-2);cursor:pointer;
+}
+#btnCats{
+  border:1px solid var(--line);background:#fff;font-family:var(--sans);font-size:11px;
+  padding:4px 9px;border-radius:6px;cursor:pointer;color:var(--ink-2);white-space:nowrap;
+}
+#btnCats:hover{background:#eef0f3}
+#catBreakdown{margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;display:flex;flex-direction:column;gap:3px}
+#catBreakdown .cbRow{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-2)}
+#catBreakdown .cbRow .sw{width:9px;height:9px;border-radius:2px;flex:none}
+#catBreakdown .cbRow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#catBreakdown .cbRow .v{font-family:var(--mono);font-size:11px}
+#catRows{display:flex;flex-direction:column;gap:7px;margin-bottom:12px;max-height:300px;overflow-y:auto}
+.catRow{display:flex;align-items:center;gap:7px}
+.catRow input[type=color]{width:32px;height:32px;border:1px solid var(--line);border-radius:6px;padding:2px;background:#fff;cursor:pointer;flex:none}
+.catRow input[type=text]{flex:1;border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;min-width:0}
+.catRow input[type=text]:focus{outline:2px solid var(--accent);border-color:transparent}
+.catRow .del{border:none;background:transparent;color:#b3bcc9;cursor:pointer;font-size:14px;padding:4px;border-radius:4px;flex:none}
+.catRow .del:hover{color:#d24545;background:#fdeeee}
+#catAdd{width:100%;border:1px dashed #b9c0cc;background:#fafbf9;border-radius:6px;padding:8px;font-family:var(--sans);font-size:12px;color:var(--ink-2);cursor:pointer;margin-bottom:14px}
+#catAdd:hover{border-color:var(--accent);color:var(--accent)}
+
+#imgMenu{position:fixed;z-index:150;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:5px;display:flex;flex-direction:column;min-width:200px}
+#imgMenu.hidden{display:none}
+#imgMenu button{border:none;background:none;text-align:left;font-family:var(--sans);font-size:12.5px;padding:9px 12px;border-radius:6px;cursor:pointer;color:var(--ink);display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+#imgMenu button:hover{background:#eef0f3}
+#imgMenu button small{color:#8b96a8;font-size:10.5px}
+
 /* トースト */
 #toast{
   position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:200;
@@ -218,6 +249,7 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
   </div>
   <div class="spacer"></div>
   <div id="scaleChip">縮尺未設定 — 基準線を引いてください</div>
+  <button class="hbtn" id="btnImg" disabled>🖼 画像エクスポート</button>
   <button class="hbtn primary" id="btnExport" disabled>⬇ Excelエクスポート</button>
 </header>
 
@@ -274,7 +306,10 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
 
   <aside id="side">
     <div class="head">
-      <h3>計測図形</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <h3>計測図形</h3>
+        <button id="btnCats">⚙ カテゴリ編集</button>
+      </div>
       <div class="sub" id="sideSub">— 図形なし</div>
     </div>
     <div id="shapeList"><div id="emptyList">図形はまだありません<br>四角形 (R) または多角形 (P) で作図します</div></div>
@@ -282,6 +317,7 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
       <div class="lbl">合計面積(表示ページ)</div>
       <div class="val" id="totalVal">0.00<small>m²</small></div>
       <div class="tsubo" id="totalTsubo">0.00 坪</div>
+      <div id="catBreakdown"></div>
     </div>
   </aside>
 </div>
@@ -306,6 +342,23 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
   </div>
 </div>
 
+<!-- カテゴリ編集モーダル -->
+<div class="modalBack hidden" id="catModal">
+  <div class="modal">
+    <h3>エリアカテゴリの編集</h3>
+    <div class="desc">名称と色の変更は図形に即時反映されます。カテゴリ設定はこのブラウザに保存されます(図面データは保存されません)。</div>
+    <div id="catRows"></div>
+    <button id="catAdd">＋ カテゴリを追加</button>
+    <div class="btns"><button id="catClose">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 画像形式メニュー -->
+<div id="imgMenu" class="hidden">
+  <button id="imgPng">PNG形式 <small>高画質・推奨</small></button>
+  <button id="imgJpg">JPG形式 <small>軽量・メール添付向き</small></button>
+</div>
+
 <div id="toast"></div>
 <input type="file" id="fileInput" accept="application/pdf,image/png,image/jpeg" style="display:none">
 
@@ -315,6 +368,23 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 const TSUBO = 3.30578512; // m² per 坪
 const PALETTE = ['#0e7c6b','#2f6db3','#b3652f','#7a4fb3','#b32f6d','#5f8a2f','#2f9db3','#a38a1f'];
+const DEFAULT_CATS = [
+  { id: 'c1', name: '執務エリア', color: '#0e7c6b' },
+  { id: 'c2', name: '会議・打合せ', color: '#2f6db3' },
+  { id: 'c3', name: '共用・リフレッシュ', color: '#b3652f' },
+  { id: 'c4', name: '収納・倉庫', color: '#7a4fb3' },
+  { id: 'c5', name: '通路・コア', color: '#6b7890' },
+];
+function loadCats() {
+  try {
+    const s = localStorage.getItem('areaPlotterCats');
+    const a = s ? JSON.parse(s) : null;
+    return Array.isArray(a) && a.length ? a : null;
+  } catch (e) { return null; }
+}
+function saveCats() {
+  try { localStorage.setItem('areaPlotterCats', JSON.stringify(S.categories)); } catch (e) {}
+}
 
 /* ---------- 状態 ---------- */
 const S = {
@@ -334,7 +404,16 @@ const S = {
   spaceHeld: false,
   mouseWorld: null,
   pendingCalib: null,
+  categories: [],
+  lastCatId: null,
 };
+S.categories = loadCats() || DEFAULT_CATS.map(c => ({ ...c }));
+
+function catById(id) { return S.categories.find(c => c.id === id) || null; }
+function getShapeColor(sh) {
+  const c = sh.catId ? catById(sh.catId) : null;
+  return c ? c.color : sh.color;
+}
 
 function pageData(n = S.pageNum) {
   if (!S.pages[n]) S.pages[n] = { calib: null, shapes: [], seq: { rect: 0, poly: 0 }, rot: 0 };
@@ -571,7 +650,7 @@ function setTool(t) {
   stage.style.cursor = t === 'pan' ? 'grab' : (t === 'select' ? 'default' : 'crosshair');
   if (t === 'calib') setHint('基準線: 始点 → 終点をクリック(Shiftで水平/垂直スナップ)', true);
   else if (t === 'rect') setHint('四角形: ドラッグして範囲を指定');
-  else if (t === 'poly') setHint('多角形: クリックで頂点を追加 / ダブルクリック・Enterで確定 / Escで取消');
+  else if (t === 'poly') setHint('多角形: クリックで頂点を追加 / Backspaceで1点戻る / ダブルクリック・Enterで確定 / Escで取消');
   else if (t === 'select') setHint('選択: 図形内ドラッグで移動 / ○辺・□頂点をドラッグでサイズ変更');
   else setHint('');
   draw();
@@ -587,6 +666,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'p' || e.key === 'P') setTool('poly');
   if (e.key === 'Enter' && S.drawing?.type === 'poly') finishPoly();
   if (e.key === 'Escape') { S.drawing = null; draw(); }
+  if (e.key === 'Backspace' && S.drawing?.type === 'poly') {
+    e.preventDefault();
+    S.drawing.points.pop();
+    if (!S.drawing.points.length) S.drawing = null;
+    draw();
+    return;
+  }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId != null) deleteShape(S.selId);
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();
@@ -843,7 +929,7 @@ function addShape(type, points) {
   const pd = pageData();
   pd.seq[type]++;
   const name = (type === 'rect' ? '四角形' : '多角形') + pd.seq[type];
-  const shape = { id: idSeq++, type, points, name, color: PALETTE[(pd.shapes.length) % PALETTE.length] };
+  const shape = { id: idSeq++, type, points, name, catId: S.lastCatId, color: PALETTE[(pd.shapes.length) % PALETTE.length] };
   pd.shapes.push(shape);
   S.selId = shape.id;
   refreshUI();
@@ -905,19 +991,20 @@ function draw() {
   // 図形
   for (const sh of pd.shapes) {
     const sel = sh.id === S.selId;
+    const col = getShapeColor(sh);
     ctx.beginPath();
     sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
     ctx.closePath();
-    ctx.fillStyle = hexA(sh.color, sel ? 0.30 : 0.18);
+    ctx.fillStyle = hexA(col, sel ? 0.30 : 0.18);
     ctx.fill();
-    ctx.strokeStyle = sh.color;
+    ctx.strokeStyle = col;
     ctx.lineWidth = (sel ? 2.5 : 1.6) * lw;
     ctx.stroke();
     if (sel) {
-      for (const p of sh.points) drawHandle(p, sh.color, zoom);
+      for (const p of sh.points) drawHandle(p, col, zoom);
       for (let i = 0; i < sh.points.length; i++) {
         const a = sh.points[i], b = sh.points[(i + 1) % sh.points.length];
-        drawEdgeHandle({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, sh.color, zoom);
+        drawEdgeHandle({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, col, zoom);
       }
     }
   }
@@ -966,7 +1053,7 @@ function draw() {
     const a = areaM2(sh);
     const line1 = sh.name;
     const line2 = a == null ? '縮尺未設定' : fmtArea(a) + ' m²';
-    drawLabel(c.x, c.y, line1, line2, sh.color, a == null);
+    drawLabel(c.x, c.y, line1, line2, getShapeColor(sh), a == null);
   }
   // 基準線ラベル
   if (pd.calib) {
@@ -1069,22 +1156,31 @@ function refreshUI(redrawList = true) {
         const a = areaM2(sh);
         const el = document.createElement('div');
         el.className = 'shapeItem' + (sh.id === S.selId ? ' sel' : '');
+        const catOpts = ['<option value="">(未分類)</option>']
+          .concat(S.categories.map(c => `<option value="${c.id}"${sh.catId === c.id ? ' selected' : ''}>${escHtml(c.name)}</option>`))
+          .join('');
         el.innerHTML = `
           <div class="row1">
-            <span class="sw" style="background:${sh.color}"></span>
+            <span class="sw" style="background:${getShapeColor(sh)}"></span>
             <input class="nm" value="${escHtml(sh.name)}" spellcheck="false">
             <button class="del" title="削除">✕</button>
           </div>
           <div class="row2">
             <span class="typ">${sh.type === 'rect' ? '四角形' : '多角形'} ・ ${sh.points.length}頂点</span>
             <span class="ar">${fmtArea(a)}<small>${a == null ? '' : 'm²'}</small></span>
-          </div>`;
+          </div>
+          <div class="row3"><select class="cat" title="エリアカテゴリ">${catOpts}</select></div>`;
         el.onclick = e => {
-          if (e.target.classList.contains('nm') || e.target.classList.contains('del')) return;
+          if (e.target.classList.contains('nm') || e.target.classList.contains('del') || e.target.classList.contains('cat')) return;
           S.selId = sh.id; refreshUI(); draw();
         };
         el.querySelector('.nm').addEventListener('input', e => { sh.name = e.target.value; draw(); });
         el.querySelector('.del').onclick = () => deleteShape(sh.id);
+        el.querySelector('.cat').addEventListener('change', e => {
+          sh.catId = e.target.value || null;
+          S.lastCatId = sh.catId; // 以降の新規図形はこのカテゴリを継承
+          refreshUI();
+        });
         list.appendChild(el);
       }
     }
@@ -1095,12 +1191,227 @@ function refreshUI(redrawList = true) {
   for (const sh of pd.shapes) { const a = areaM2(sh); if (a != null) total += a; }
   $('totalVal').innerHTML = (ok ? fmtArea(total) : '—') + '<small>m²</small>';
   $('totalTsubo').textContent = ok ? (total / TSUBO).toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' 坪' : '';
+  // カテゴリ別内訳(表示ページ)
+  const bd = $('catBreakdown');
+  if (ok && pd.shapes.length) {
+    const agg = new Map();
+    for (const sh of pd.shapes) {
+      const a = areaM2(sh); if (a == null) continue;
+      const key = sh.catId || '';
+      agg.set(key, (agg.get(key) || 0) + a);
+    }
+    let html = '';
+    for (const c of S.categories) if (agg.has(c.id)) html += cbRow(c.color, c.name, agg.get(c.id));
+    if (agg.has('')) html += cbRow('#c3c9d2', '(未分類)', agg.get(''));
+    bd.innerHTML = html;
+  } else bd.innerHTML = '';
   $('sideSub').textContent = pd.shapes.length ? `${pd.shapes.length} 図形 — ページ ${S.pageNum}` : '— 図形なし';
 
   $('btnExport').disabled = !Object.values(S.pages).some(p => p.shapes.length);
+  $('btnImg').disabled = !S.baseCanvas;
   draw();
 }
 function escHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function cbRow(color, name, v) {
+  return `<div class="cbRow"><span class="sw" style="background:${color}"></span><span class="nm">${escHtml(name)}</span><span class="v">${fmtArea(v)} m²</span></div>`;
+}
+
+/* ---------- カテゴリ編集モーダル ---------- */
+$('btnCats').onclick = () => { renderCatRows(); $('catModal').classList.remove('hidden'); };
+$('catClose').onclick = () => $('catModal').classList.add('hidden');
+$('catAdd').onclick = () => {
+  S.categories.push({ id: 'c' + Date.now(), name: '新規カテゴリ', color: PALETTE[S.categories.length % PALETTE.length] });
+  saveCats(); renderCatRows(); refreshUI();
+};
+function renderCatRows() {
+  const box = $('catRows');
+  box.innerHTML = '';
+  if (!S.categories.length) {
+    box.innerHTML = '<div style="font-size:12px;color:#9aa5b5;text-align:center;padding:10px">カテゴリがありません</div>';
+    return;
+  }
+  for (const c of S.categories) {
+    const row = document.createElement('div');
+    row.className = 'catRow';
+    row.innerHTML = `<input type="color" value="${c.color}"><input type="text" value="${escHtml(c.name)}" spellcheck="false"><button class="del" title="削除">✕</button>`;
+    const [colIn, nameIn, delBtn] = row.children;
+    colIn.oninput = () => { c.color = colIn.value; saveCats(); refreshUI(); };
+    nameIn.oninput = () => { c.name = nameIn.value; saveCats(); refreshUI(); };
+    delBtn.onclick = () => {
+      S.categories = S.categories.filter(x => x.id !== c.id);
+      for (const p of Object.values(S.pages)) for (const sh of p.shapes) if (sh.catId === c.id) sh.catId = null;
+      if (S.lastCatId === c.id) S.lastCatId = null;
+      saveCats(); renderCatRows(); refreshUI();
+      toast(`カテゴリ「${c.name}」を削除しました(対象図形は未分類に)`);
+    };
+    box.appendChild(row);
+  }
+}
+
+/* ---------- 画像エクスポート ---------- */
+$('btnImg').onclick = e => {
+  e.stopPropagation();
+  const m = $('imgMenu');
+  const r = e.currentTarget.getBoundingClientRect();
+  m.style.top = (r.bottom + 6) + 'px';
+  m.style.left = Math.min(r.left, window.innerWidth - 210) + 'px';
+  m.classList.toggle('hidden');
+};
+document.addEventListener('click', e => {
+  if (!e.target.closest('#imgMenu') && !e.target.closest('#btnImg')) $('imgMenu').classList.add('hidden');
+});
+$('imgPng').onclick = () => { $('imgMenu').classList.add('hidden'); exportImage('png'); };
+$('imgJpg').onclick = () => { $('imgMenu').classList.add('hidden'); exportImage('jpg'); };
+
+function exportImage(format = 'png') {
+  if (!S.baseCanvas) return;
+  const pd = pageData();
+  const W = S.baseCanvas.width, H = S.baseCanvas.height;
+  const k = Math.max(1, W / 1500); // 注釈のスケール係数(解像度に応じて拡大)
+  const mpu = metersPerUnit();
+
+  // カテゴリ別集計(フッター凡例用)
+  const agg = new Map();
+  let total = 0;
+  for (const sh of pd.shapes) {
+    const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
+    const key = sh.catId || '';
+    const cur = agg.get(key) || { n: 0, a: 0 };
+    cur.n++; if (a != null) { cur.a += a; total += a; }
+    agg.set(key, cur);
+  }
+  const legend = [];
+  for (const c of S.categories) if (agg.has(c.id)) legend.push({ color: c.color, name: c.name, ...agg.get(c.id) });
+  if (agg.has('')) legend.push({ color: '#c3c9d2', name: '(未分類)', ...agg.get('') });
+
+  const pad = 26 * k, lh = 27 * k;
+  const footH = pd.shapes.length ? pad * 2 + lh * (legend.length + 1) + 12 * k : 0;
+
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H + footH;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(S.baseCanvas, 0, 0);
+
+  const rr = (x, y, w, h, r) => {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  };
+
+  // 図形
+  for (const sh of pd.shapes) {
+    const col = getShapeColor(sh);
+    g.beginPath();
+    sh.points.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
+    g.closePath();
+    g.fillStyle = hexA(col, 0.18);
+    g.fill();
+    g.strokeStyle = col;
+    g.lineWidth = 2 * k;
+    g.stroke();
+  }
+  // 基準線
+  if (pd.calib) {
+    const { p1, p2 } = pd.calib;
+    g.strokeStyle = '#e4572e'; g.lineWidth = 2.4 * k;
+    g.beginPath(); g.moveTo(p1.x, p1.y); g.lineTo(p2.x, p2.y); g.stroke();
+    const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x) + Math.PI / 2, t = 8 * k;
+    for (const p of [p1, p2]) {
+      g.beginPath();
+      g.moveTo(p.x - Math.cos(ang) * t, p.y - Math.sin(ang) * t);
+      g.lineTo(p.x + Math.cos(ang) * t, p.y + Math.sin(ang) * t);
+      g.stroke();
+    }
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2 - 18 * k;
+    const txt = '基準 ' + pd.calib.label;
+    g.font = `600 ${12 * k}px "IBM Plex Sans JP", sans-serif`;
+    const tw = g.measureText(txt).width + 18 * k, th = 22 * k;
+    rr(mx - tw / 2, my - th / 2, tw, th, th / 2);
+    g.fillStyle = '#e4572e'; g.fill();
+    g.fillStyle = '#fff'; g.textAlign = 'center';
+    g.fillText(txt, mx, my + 4.2 * k);
+    g.textAlign = 'start';
+  }
+  // 面積ラベル
+  for (const sh of pd.shapes) {
+    const col = getShapeColor(sh);
+    const ce = centroid(sh.points);
+    const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
+    const l1 = sh.name;
+    const l2 = a == null ? '縮尺未設定' : fmtArea(a) + ' m²';
+    g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
+    const w2 = g.measureText(l2).width;
+    g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
+    const w1 = g.measureText(l1).width;
+    const bw = Math.max(w1, w2) + 20 * k, bh = 40 * k;
+    rr(ce.x - bw / 2, ce.y - bh / 2, bw, bh, 7 * k);
+    g.fillStyle = 'rgba(255,255,255,.93)'; g.fill();
+    g.strokeStyle = col; g.lineWidth = 1.4 * k; g.stroke();
+    g.textAlign = 'center';
+    g.fillStyle = '#5b6779';
+    g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
+    g.fillText(l1, ce.x, ce.y - bh / 2 + 15.5 * k);
+    g.fillStyle = a == null ? '#b8860b' : col;
+    g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
+    g.fillText(l2, ce.x, ce.y - bh / 2 + 32 * k);
+    g.textAlign = 'start';
+  }
+  // フッター凡例
+  if (footH > 0) {
+    g.fillStyle = '#f7f8f6';
+    g.fillRect(0, H, W, footH);
+    g.strokeStyle = '#d8dce3'; g.lineWidth = 1.5 * k;
+    g.beginPath(); g.moveTo(0, H); g.lineTo(W, H); g.stroke();
+    let y = H + pad + 6 * k;
+    g.fillStyle = '#22304a';
+    g.font = `700 ${15 * k}px "IBM Plex Sans JP", sans-serif`;
+    g.fillText(`面積算定 — ${S.fileName}${S.numPages > 1 ? `(ページ ${S.pageNum})` : ''}`, pad, y);
+    g.font = `500 ${12.5 * k}px "IBM Plex Sans JP", sans-serif`;
+    g.fillStyle = '#5b6779';
+    g.textAlign = 'end';
+    g.fillText(new Date().toLocaleDateString('ja-JP'), W - pad, y);
+    g.textAlign = 'start';
+    y += lh + 4 * k;
+    for (const l of legend) {
+      g.fillStyle = l.color;
+      rr(pad, y - 12 * k, 14 * k, 14 * k, 3 * k); g.fill();
+      g.fillStyle = '#3d4d6b';
+      g.font = `500 ${13 * k}px "IBM Plex Sans JP", sans-serif`;
+      g.fillText(`${l.name}(${l.n})`, pad + 22 * k, y);
+      g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
+      g.textAlign = 'end';
+      g.fillText(mpu != null ? fmtArea(l.a) + ' m²' : '—', pad + 420 * k, y);
+      g.textAlign = 'start';
+      y += lh;
+    }
+    g.strokeStyle = '#d8dce3';
+    g.beginPath(); g.moveTo(pad, y - 16 * k); g.lineTo(pad + 420 * k, y - 16 * k); g.stroke();
+    g.fillStyle = '#22304a';
+    g.font = `700 ${13.5 * k}px "IBM Plex Sans JP", sans-serif`;
+    g.fillText('合計', pad + 22 * k, y + 4 * k);
+    g.font = `700 ${14 * k}px "IBM Plex Mono", monospace`;
+    g.textAlign = 'end';
+    g.fillText(mpu != null ? fmtArea(total) + ' m²(' + (total / TSUBO).toFixed(2) + ' 坪)' : '縮尺未設定', pad + 420 * k, y + 4 * k);
+    g.textAlign = 'start';
+  }
+
+  const base = S.fileName.replace(/\.[^.]+$/, '') || '面積算定';
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  c.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = `${base}_面積図${S.numPages > 1 ? '_p' + S.pageNum : ''}.${format}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(format.toUpperCase() + '画像を出力しました');
+  }, mime, format === 'jpg' ? 0.92 : undefined);
+}
 
 /* ---------- Excelエクスポート ---------- */
 $('btnExport').onclick = () => {
@@ -1109,9 +1420,10 @@ $('btnExport').onclick = () => {
   rows.push(['図面ファイル', S.fileName]);
   rows.push(['出力日時', new Date().toLocaleString('ja-JP')]);
   rows.push([]);
-  rows.push(['ページ', 'No.', '名称', '種類', '頂点数', '面積 (m²)', '面積 (坪)', '備考']);
+  rows.push(['ページ', 'No.', '名称', 'カテゴリ', '種類', '頂点数', '面積 (m²)', '面積 (坪)', '備考']);
 
   let grand = 0, anyUncalib = false;
+  const catAgg = new Map(); // catId('' = 未分類) -> {n, a}
   const pageNums = Object.keys(S.pages).map(Number).sort((a, b) => a - b);
 
   for (const pn of pageNums) {
@@ -1123,8 +1435,13 @@ $('btnExport').onclick = () => {
     pd.shapes.forEach((sh, i) => {
       const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
       if (a != null) { sub += a; grand += a; } else anyUncalib = true;
+      const key = sh.catId || '';
+      const agg = catAgg.get(key) || { n: 0, a: 0 };
+      agg.n++; if (a != null) agg.a += a;
+      catAgg.set(key, agg);
+      const catName = sh.catId ? (catById(sh.catId)?.name || '(削除済カテゴリ)') : '(未分類)';
       rows.push([
-        pn, i + 1, sh.name,
+        pn, i + 1, sh.name, catName,
         sh.type === 'rect' ? '四角形' : '多角形',
         sh.points.length,
         a != null ? round2(a) : '縮尺未設定',
@@ -1132,13 +1449,25 @@ $('btnExport').onclick = () => {
         c ? `基準 ${c.label}` : '',
       ]);
     });
-    rows.push([pn, '', `ページ ${pn} 小計`, '', '', round2(sub), round2(sub / TSUBO), '']);
+    rows.push([pn, '', `ページ ${pn} 小計`, '', '', '', round2(sub), round2(sub / TSUBO), '']);
   }
   rows.push([]);
-  rows.push(['', '', '総合計', '', '', round2(grand), round2(grand / TSUBO), anyUncalib ? '※縮尺未設定の図形は合計に含まれません' : '']);
+  rows.push(['', '', '総合計', '', '', '', round2(grand), round2(grand / TSUBO), anyUncalib ? '※縮尺未設定の図形は合計に含まれません' : '']);
+
+  // カテゴリ別集計(全ページ)
+  rows.push([]);
+  rows.push(['カテゴリ別集計']);
+  rows.push(['カテゴリ', '図形数', '面積 (m²)', '面積 (坪)', '構成比']);
+  const catKeys = S.categories.map(c => c.id).filter(id => catAgg.has(id));
+  if (catAgg.has('')) catKeys.push('');
+  for (const key of catKeys) {
+    const agg = catAgg.get(key);
+    const name = key ? (catById(key)?.name || '(削除済カテゴリ)') : '(未分類)';
+    rows.push([name, agg.n, round2(agg.a), round2(agg.a / TSUBO), grand > 0 ? (agg.a / grand * 100).toFixed(1) + '%' : '']);
+  }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 7 }, { wch: 5 }, { wch: 22 }, { wch: 9 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  ws['!cols'] = [{ wch: 7 }, { wch: 5 }, { wch: 20 }, { wch: 18 }, { wch: 9 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '面積算定');
   const base = S.fileName.replace(/\.[^.]+$/, '') || '面積算定';

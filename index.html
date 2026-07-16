@@ -282,9 +282,17 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
         <span class="kbd">R</span>
       </button>
+      <button class="tool" data-tool="circle" data-tip="円・楕円 (O)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="8" ry="6.5"/></svg>
+        <span class="kbd">O</span>
+      </button>
       <button class="tool" data-tool="poly" data-tip="フリーフォーム(多角形) (P)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4l13 4-3 12-13-2 1-9z" stroke-linejoin="round"/><circle cx="7" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="20" cy="8" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="20" r="1.6" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none"/><circle cx="5" cy="9" r="1.6" fill="currentColor" stroke="none"/></svg>
         <span class="kbd">P</span>
+      </button>
+      <button class="tool" data-tool="line" data-tip="長さ計測(直線・折れ線) (L)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18l6-9 5 4 7-9" stroke-linejoin="round"/><circle cx="3" cy="18" r="1.6" fill="currentColor" stroke="none"/><circle cx="9" cy="9" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="13" r="1.6" fill="currentColor" stroke="none"/><circle cx="21" cy="4" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span class="kbd">L</span>
       </button>
       <hr>
       <button class="tool" data-tool="pan" data-tip="手のひら(移動) (Space)">
@@ -416,7 +424,7 @@ function getShapeColor(sh) {
 }
 
 function pageData(n = S.pageNum) {
-  if (!S.pages[n]) S.pages[n] = { calib: null, shapes: [], seq: { rect: 0, poly: 0 }, rot: 0 };
+  if (!S.pages[n]) S.pages[n] = { calib: null, shapes: [], seq: { rect: 0, poly: 0, circle: 0, line: 0 }, rot: 0 };
   return S.pages[n];
 }
 
@@ -488,10 +496,48 @@ function metersPerUnit() { // 基準座標1pxあたりのメートル
   const d = dist(c.p1, c.p2);
   return d > 0 ? c.meters / d : null;
 }
+function ellipsePts(cx, cy, rx, ry, n = 96) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / n * Math.PI * 2;
+    pts.push({ x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry });
+  }
+  return pts;
+}
+function typeName(sh) {
+  if (sh.type === 'line') return sh.points.length === 2 ? '直線' : '折れ線';
+  return { rect: '四角形', poly: '多角形', circle: '円' }[sh.type] || sh.type;
+}
+function pathLen(pts) {
+  let s = 0;
+  for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]);
+  return s;
+}
+function pathMidpoint(pts) { // 経路の中間地点(ラベル位置用)
+  const half = pathLen(pts) / 2;
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = dist(pts[i - 1], pts[i]);
+    if (acc + d >= half && d > 0) {
+      const t = (half - acc) / d;
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+    }
+    acc += d;
+  }
+  return pts[0];
+}
+function lengthM(shape) {
+  const mpu = metersPerUnit();
+  return mpu == null ? null : pathLen(shape.points) * mpu;
+}
+function pxArea(shape) { // 図面座標系での面積(px²)。円は正確な楕円面積
+  if (shape.type === 'circle') return Math.PI * shape.rx * shape.ry;
+  return polyArea(shape.points);
+}
 function areaM2(shape) {
   const mpu = metersPerUnit();
   if (mpu == null) return null;
-  return polyArea(shape.points) * mpu * mpu;
+  return pxArea(shape) * mpu * mpu;
 }
 function fmtArea(v) { return v == null ? '—' : v.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -626,7 +672,16 @@ function rotatePage(cw) {
   pd.rot = ((pd.rot || 0) + (cw ? 90 : 270)) % 360;
   // 既存の図形・基準線も同じ回転で座標変換(面積は不変)
   const f = cw ? p => ({ x: H - p.y, y: p.x }) : p => ({ x: p.y, y: W - p.x });
-  for (const sh of pd.shapes) sh.points = sh.points.map(f);
+  for (const sh of pd.shapes) {
+    if (sh.type === 'circle') {
+      const c0 = f({ x: sh.cx, y: sh.cy });
+      sh.cx = c0.x; sh.cy = c0.y;
+      const t = sh.rx; sh.rx = sh.ry; sh.ry = t;
+      sh.points = ellipsePts(sh.cx, sh.cy, sh.rx, sh.ry);
+    } else {
+      sh.points = sh.points.map(f);
+    }
+  }
   if (pd.calib) { pd.calib.p1 = f(pd.calib.p1); pd.calib.p2 = f(pd.calib.p2); }
   if (S.pendingCalib) { S.pendingCalib.p1 = f(S.pendingCalib.p1); S.pendingCalib.p2 = f(S.pendingCalib.p2); }
   S.drawing = null;
@@ -650,7 +705,9 @@ function setTool(t) {
   stage.style.cursor = t === 'pan' ? 'grab' : (t === 'select' ? 'default' : 'crosshair');
   if (t === 'calib') setHint('基準線: 始点 → 終点をクリック(Shiftで水平/垂直スナップ)', true);
   else if (t === 'rect') setHint('四角形: ドラッグして範囲を指定');
+  else if (t === 'circle') setHint('円: ドラッグして範囲を指定 / Shiftで真円');
   else if (t === 'poly') setHint('多角形: クリックで頂点を追加 / Backspaceで1点戻る / ダブルクリック・Enterで確定 / Escで取消');
+  else if (t === 'line') setHint('長さ計測: クリックで点を追加(Shiftで水平/垂直)/ Backspaceで1点戻る / ダブルクリック・Enterで確定');
   else if (t === 'select') setHint('選択: 図形内ドラッグで移動 / ○辺・□頂点をドラッグでサイズ変更');
   else setHint('');
   draw();
@@ -663,10 +720,15 @@ document.addEventListener('keydown', e => {
   if (e.key === 'v' || e.key === 'V') setTool('select');
   if (e.key === 'c' || e.key === 'C') setTool('calib');
   if (e.key === 'r' || e.key === 'R') setTool('rect');
+  if (e.key === 'o' || e.key === 'O') setTool('circle');
   if (e.key === 'p' || e.key === 'P') setTool('poly');
-  if (e.key === 'Enter' && S.drawing?.type === 'poly') finishPoly();
+  if (e.key === 'l' || e.key === 'L') setTool('line');
+  if (e.key === 'Enter' && S.drawing) {
+    if (S.drawing.type === 'poly') finishPoly();
+    else if (S.drawing.type === 'line') finishLine();
+  }
   if (e.key === 'Escape') { S.drawing = null; draw(); }
-  if (e.key === 'Backspace' && S.drawing?.type === 'poly') {
+  if (e.key === 'Backspace' && (S.drawing?.type === 'poly' || S.drawing?.type === 'line')) {
     e.preventDefault();
     S.drawing.points.pop();
     if (!S.drawing.points.length) S.drawing = null;
@@ -676,7 +738,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId != null) deleteShape(S.selId);
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();
-    if (S.drawing?.type === 'poly' && S.drawing.points.length > 0) { S.drawing.points.pop(); if (!S.drawing.points.length) S.drawing = null; draw(); }
+    if ((S.drawing?.type === 'poly' || S.drawing?.type === 'line') && S.drawing.points.length > 0) { S.drawing.points.pop(); if (!S.drawing.points.length) S.drawing = null; draw(); }
     else { const sh = pageData().shapes; if (sh.length) { const rm = sh.pop(); if (S.selId === rm.id) S.selId = null; refreshUI(); toast('直前の図形を取り消しました'); } }
   }
 });
@@ -713,8 +775,8 @@ stage.addEventListener('mousedown', e => {
     return;
   }
 
-  if (S.tool === 'rect') {
-    S.drawing = { type: 'rect', p1: w, p2: w };
+  if (S.tool === 'rect' || S.tool === 'circle') {
+    S.drawing = { type: S.tool, p1: w, p2: w };
     draw();
     return;
   }
@@ -727,6 +789,16 @@ stage.addEventListener('mousedown', e => {
       const s0 = worldToScreen(pts[0]);
       if (Math.hypot(s0.x - sp.x, s0.y - sp.y) < 10) { finishPoly(); return; }
     }
+    let p = w;
+    if (e.shiftKey && pts.length) p = snapAxis(pts[pts.length - 1], w);
+    pts.push(p);
+    draw();
+    return;
+  }
+
+  if (S.tool === 'line') {
+    if (!S.drawing) S.drawing = { type: 'line', points: [] };
+    const pts = S.drawing.points;
     let p = w;
     if (e.shiftKey && pts.length) p = snapAxis(pts[pts.length - 1], w);
     pts.push(p);
@@ -751,9 +823,9 @@ stage.addEventListener('mousedown', e => {
         }
       }
     }
-    const sh = hitShape(w);
+    const sh = hitShape(w, sp);
     S.selId = sh ? sh.id : null;
-    if (sh) S.dragging = { mode: 'move', shape: sh, start: w, orig: sh.points.map(p => ({ ...p })) };
+    if (sh) S.dragging = { mode: 'move', shape: sh, start: w, orig: sh.points.map(p => ({ ...p })), origC: sh.type === 'circle' ? { cx: sh.cx, cy: sh.cy } : null };
     refreshUI();
   }
 });
@@ -779,6 +851,7 @@ stage.addEventListener('mousemove', e => {
     } else {
       const dx = w.x - d.start.x, dy = w.y - d.start.y;
       d.shape.points = d.orig.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      if (d.shape.type === 'circle' && d.origC) { d.shape.cx = d.origC.cx + dx; d.shape.cy = d.origC.cy + dy; }
     }
     refreshUI(false);
     draw();
@@ -787,7 +860,16 @@ stage.addEventListener('mousemove', e => {
   if (S.drawing) {
     if (S.drawing.type === 'calib') S.drawing.p2 = e.shiftKey ? snapAxis(S.drawing.p1, w) : w;
     if (S.drawing.type === 'rect') S.drawing.p2 = w;
-    if (S.drawing.type === 'poly') {
+    if (S.drawing.type === 'circle') {
+      let p = w;
+      if (e.shiftKey) { // 真円(正方形バウンディング)
+        const dx = w.x - S.drawing.p1.x, dy = w.y - S.drawing.p1.y;
+        const m = Math.max(Math.abs(dx), Math.abs(dy));
+        p = { x: S.drawing.p1.x + (dx < 0 ? -m : m), y: S.drawing.p1.y + (dy < 0 ? -m : m) };
+      }
+      S.drawing.p2 = p;
+    }
+    if (S.drawing.type === 'poly' || S.drawing.type === 'line') {
       const pts = S.drawing.points;
       S.drawing.cursor = (e.shiftKey && pts.length) ? snapAxis(pts[pts.length - 1], w) : w;
     }
@@ -807,7 +889,7 @@ stage.addEventListener('mousemove', e => {
         }
       }
     }
-    if (cur === 'default' && hitShape(w)) cur = 'move';
+    if (cur === 'default' && hitShape(w, sp)) cur = 'move';
     stage.style.cursor = cur;
   }
 });
@@ -828,17 +910,26 @@ window.addEventListener('mouseup', () => {
       ]);
     } else draw();
   }
+  if (S.drawing?.type === 'circle') {
+    const { p1, p2 } = S.drawing;
+    S.drawing = null;
+    const rx = Math.abs(p2.x - p1.x) / 2, ry = Math.abs(p2.y - p1.y) / 2;
+    if (rx > 2 && ry > 2) {
+      const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+      addShape('circle', ellipsePts(cx, cy, rx, ry), { cx, cy, rx, ry });
+    } else draw();
+  }
 });
 
 stage.addEventListener('dblclick', e => {
-  if (S.drawing?.type === 'poly') {
+  if (S.drawing?.type === 'poly' || S.drawing?.type === 'line') {
     // ダブルクリックの2打目で追加された頂点を除去
     const pts = S.drawing.points;
     if (pts.length >= 2) {
       const last = pts[pts.length - 1], prev = pts[pts.length - 2];
       if (dist(last, prev) < 2 / S.view.zoom) pts.pop();
     }
-    finishPoly();
+    if (S.drawing.type === 'poly') finishPoly(); else finishLine();
   }
 });
 
@@ -848,15 +939,32 @@ function finishPoly() {
   S.drawing = null;
   addShape('poly', pts);
 }
+function finishLine() {
+  if (!S.drawing || S.drawing.points.length < 2) { toast('2点以上必要です'); return; }
+  const pts = S.drawing.points;
+  S.drawing = null;
+  addShape('line', pts);
+}
 
-function hitShape(w) {
+function hitShape(w, sp) {
   const sh = pageData().shapes;
-  for (let i = sh.length - 1; i >= 0; i--) if (pointInPoly(w, sh[i].points)) return sh[i];
+  for (let i = sh.length - 1; i >= 0; i--) {
+    if (sh[i].type === 'line') {
+      if (sp && hitEdge(sh[i], sp) >= 0) return sh[i];
+    } else if (pointInPoly(w, sh[i].points)) return sh[i];
+  }
   return null;
 }
+function circleHandles(sh) { // 右・下・左・上の4ハンドル
+  return [
+    { x: sh.cx + sh.rx, y: sh.cy }, { x: sh.cx, y: sh.cy + sh.ry },
+    { x: sh.cx - sh.rx, y: sh.cy }, { x: sh.cx, y: sh.cy - sh.ry },
+  ];
+}
 function hitVertex(shape, sp) { // sp: 画面座標。近い頂点のインデックスを返す
-  for (let i = 0; i < shape.points.length; i++) {
-    const s = worldToScreen(shape.points[i]);
+  const pts = shape.type === 'circle' ? circleHandles(shape) : shape.points;
+  for (let i = 0; i < pts.length; i++) {
+    const s = worldToScreen(pts[i]);
     if (Math.hypot(s.x - sp.x, s.y - sp.y) < 9) return i;
   }
   return -1;
@@ -869,8 +977,10 @@ function distToSegment(p, a, b) {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 function hitEdge(shape, sp) { // sp: 画面座標。近い辺のインデックス(始点側)を返す
+  if (shape.type === 'circle') return -1; // 円はハンドルでのみサイズ変更
   const n = shape.points.length;
-  for (let i = 0; i < n; i++) {
+  const segs = shape.type === 'line' ? n - 1 : n; // 折れ線は閉じない
+  for (let i = 0; i < segs; i++) {
     const a = worldToScreen(shape.points[i]);
     const b = worldToScreen(shape.points[(i + 1) % n]);
     if (distToSegment(sp, a, b) < 7) return i;
@@ -898,6 +1008,18 @@ function applyEdgeDrag(d, w) {
 }
 function applyVertexDrag(d, w, shift) {
   const sh = d.shape, idx = d.idx, o = d.orig;
+  if (sh.type === 'circle') {
+    // 右/左ハンドル→rx、下/上ハンドル→ry。Shiftで真円
+    if (idx === 0 || idx === 2) {
+      sh.rx = Math.max(2, Math.abs(w.x - sh.cx));
+      if (shift) sh.ry = sh.rx;
+    } else {
+      sh.ry = Math.max(2, Math.abs(w.y - sh.cy));
+      if (shift) sh.rx = sh.ry;
+    }
+    sh.points = ellipsePts(sh.cx, sh.cy, sh.rx, sh.ry);
+    return;
+  }
   if (sh.type === 'rect' && o.length === 4) {
     // 対角の頂点を固定し、矩形を維持したままサイズ変更
     const opp = o[(idx + 2) % 4];
@@ -925,11 +1047,11 @@ function applyVertexDrag(d, w, shift) {
 
 /* ---------- 図形 ---------- */
 let idSeq = 1;
-function addShape(type, points) {
+function addShape(type, points, extra = {}) {
   const pd = pageData();
-  pd.seq[type]++;
-  const name = (type === 'rect' ? '四角形' : '多角形') + pd.seq[type];
-  const shape = { id: idSeq++, type, points, name, catId: S.lastCatId, color: PALETTE[(pd.shapes.length) % PALETTE.length] };
+  pd.seq[type] = (pd.seq[type] || 0) + 1;
+  const name = ({ rect: '四角形', poly: '多角形', circle: '円', line: '測定線' }[type]) + pd.seq[type];
+  const shape = { id: idSeq++, type, points, name, catId: S.lastCatId, color: PALETTE[(pd.shapes.length) % PALETTE.length], ...extra };
   pd.shapes.push(shape);
   S.selId = shape.id;
   refreshUI();
@@ -992,19 +1114,49 @@ function draw() {
   for (const sh of pd.shapes) {
     const sel = sh.id === S.selId;
     const col = getShapeColor(sh);
+    if (sh.type === 'line') {
+      ctx.beginPath();
+      sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (sel ? 3.2 : 2.2) * lw;
+      ctx.stroke();
+      // 端点・中間点マーク
+      for (const p of sh.points) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3 / zoom, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+      }
+      if (sel) {
+        for (const p of sh.points) drawHandle(p, col, zoom);
+        for (let i = 0; i < sh.points.length - 1; i++) {
+          const a = sh.points[i], b = sh.points[i + 1];
+          drawEdgeHandle({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, col, zoom);
+        }
+      }
+      continue;
+    }
     ctx.beginPath();
-    sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-    ctx.closePath();
+    if (sh.type === 'circle') {
+      ctx.ellipse(sh.cx, sh.cy, sh.rx, sh.ry, 0, 0, Math.PI * 2);
+    } else {
+      sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath();
+    }
     ctx.fillStyle = hexA(col, sel ? 0.30 : 0.18);
     ctx.fill();
     ctx.strokeStyle = col;
     ctx.lineWidth = (sel ? 2.5 : 1.6) * lw;
     ctx.stroke();
     if (sel) {
-      for (const p of sh.points) drawHandle(p, col, zoom);
-      for (let i = 0; i < sh.points.length; i++) {
-        const a = sh.points[i], b = sh.points[(i + 1) % sh.points.length];
-        drawEdgeHandle({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, col, zoom);
+      if (sh.type === 'circle') {
+        for (const p of circleHandles(sh)) drawHandle(p, col, zoom);
+      } else {
+        for (const p of sh.points) drawHandle(p, col, zoom);
+        for (let i = 0; i < sh.points.length; i++) {
+          const a = sh.points[i], b = sh.points[(i + 1) % sh.points.length];
+          drawEdgeHandle({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, col, zoom);
+        }
       }
     }
   }
@@ -1025,7 +1177,18 @@ function draw() {
       ctx.rect(Math.min(p1.x, p2.x), Math.min(p1.y, p2.y), Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
       ctx.fill(); ctx.stroke();
     }
-    if (S.drawing.type === 'poly' && S.drawing.points.length) {
+    if (S.drawing.type === 'circle') {
+      const { p1, p2 } = S.drawing;
+      const rx = Math.abs(p2.x - p1.x) / 2, ry = Math.abs(p2.y - p1.y) / 2;
+      if (rx > 0 && ry > 0) {
+        ctx.strokeStyle = '#0e7c6b'; ctx.lineWidth = 1.8 / zoom;
+        ctx.fillStyle = 'rgba(14,124,107,.12)';
+        ctx.beginPath();
+        ctx.ellipse((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+      }
+    }
+    if ((S.drawing.type === 'poly' || S.drawing.type === 'line') && S.drawing.points.length) {
       const pts = S.drawing.points;
       ctx.strokeStyle = '#0e7c6b'; ctx.lineWidth = 1.8 / zoom;
       ctx.beginPath();
@@ -1034,8 +1197,8 @@ function draw() {
       ctx.stroke();
       ctx.setLineDash([]);
       for (const p of pts) drawHandle(p, '#0e7c6b', zoom);
-      // 始点クローズ目印
-      if (pts.length >= 3) {
+      // 始点クローズ目印(多角形のみ)
+      if (S.drawing.type === 'poly' && pts.length >= 3) {
         ctx.beginPath();
         ctx.arc(pts[0].x, pts[0].y, 8 / zoom, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(14,124,107,.5)';
@@ -1049,11 +1212,12 @@ function draw() {
   /* ラベル(画面座標で描画) */
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   for (const sh of pd.shapes) {
-    const c = worldToScreen(centroid(sh.points));
-    const a = areaM2(sh);
+    const isLine = sh.type === 'line';
+    const c = worldToScreen(isLine ? pathMidpoint(sh.points) : centroid(sh.points));
+    const v = isLine ? lengthM(sh) : areaM2(sh);
     const line1 = sh.name;
-    const line2 = a == null ? '縮尺未設定' : fmtArea(a) + ' m²';
-    drawLabel(c.x, c.y, line1, line2, getShapeColor(sh), a == null);
+    const line2 = v == null ? '縮尺未設定' : fmtArea(v) + (isLine ? ' m' : ' m²');
+    drawLabel(c.x, c.y, line1, line2, getShapeColor(sh), v == null);
   }
   // 基準線ラベル
   if (pd.calib) {
@@ -1153,7 +1317,21 @@ function refreshUI(redrawList = true) {
       list.innerHTML = '<div id="emptyList">図形はまだありません<br>四角形 (R) または多角形 (P) で作図します</div>';
     } else {
       for (const sh of pd.shapes) {
-        const a = areaM2(sh);
+        const isLine = sh.type === 'line';
+        const v = isLine ? lengthM(sh) : areaM2(sh);
+        const unit = isLine ? 'm' : 'm²';
+        const mpu = metersPerUnit();
+        let typ;
+        if (sh.type === 'circle') {
+          if (mpu != null) {
+            const dx = sh.rx * 2 * mpu, dy = sh.ry * 2 * mpu;
+            typ = Math.abs(dx - dy) < 0.005 ? `円 ・ Ø${dx.toFixed(2)}m` : `楕円 ・ ${dx.toFixed(2)}×${dy.toFixed(2)}m`;
+          } else typ = '円';
+        } else if (isLine) {
+          typ = `${typeName(sh)} ・ ${sh.points.length}点`;
+        } else {
+          typ = `${typeName(sh)} ・ ${sh.points.length}頂点`;
+        }
         const el = document.createElement('div');
         el.className = 'shapeItem' + (sh.id === S.selId ? ' sel' : '');
         const catOpts = ['<option value="">(未分類)</option>']
@@ -1166,8 +1344,8 @@ function refreshUI(redrawList = true) {
             <button class="del" title="削除">✕</button>
           </div>
           <div class="row2">
-            <span class="typ">${sh.type === 'rect' ? '四角形' : '多角形'} ・ ${sh.points.length}頂点</span>
-            <span class="ar">${fmtArea(a)}<small>${a == null ? '' : 'm²'}</small></span>
+            <span class="typ">${typ}</span>
+            <span class="ar">${fmtArea(v)}<small>${v == null ? '' : unit}</small></span>
           </div>
           <div class="row3"><select class="cat" title="エリアカテゴリ">${catOpts}</select></div>`;
         el.onclick = e => {
@@ -1188,14 +1366,15 @@ function refreshUI(redrawList = true) {
 
   // 合計
   let total = 0, ok = metersPerUnit() != null;
-  for (const sh of pd.shapes) { const a = areaM2(sh); if (a != null) total += a; }
+  for (const sh of pd.shapes) { if (sh.type === 'line') continue; const a = areaM2(sh); if (a != null) total += a; }
   $('totalVal').innerHTML = (ok ? fmtArea(total) : '—') + '<small>m²</small>';
   $('totalTsubo').textContent = ok ? (total / TSUBO).toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' 坪' : '';
-  // カテゴリ別内訳(表示ページ)
+  // カテゴリ別内訳(表示ページ・面積図形のみ)
   const bd = $('catBreakdown');
   if (ok && pd.shapes.length) {
     const agg = new Map();
     for (const sh of pd.shapes) {
+      if (sh.type === 'line') continue;
       const a = areaM2(sh); if (a == null) continue;
       const key = sh.catId || '';
       agg.set(key, (agg.get(key) || 0) + a);
@@ -1274,7 +1453,8 @@ function exportImage(format = 'png') {
   const agg = new Map();
   let total = 0;
   for (const sh of pd.shapes) {
-    const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
+    if (sh.type === 'line') continue; // 線は面積集計に含めない
+    const a = mpu != null ? pxArea(sh) * mpu * mpu : null;
     const key = sh.catId || '';
     const cur = agg.get(key) || { n: 0, a: 0 };
     cur.n++; if (a != null) { cur.a += a; total += a; }
@@ -1307,9 +1487,27 @@ function exportImage(format = 'png') {
   // 図形
   for (const sh of pd.shapes) {
     const col = getShapeColor(sh);
+    if (sh.type === 'line') {
+      g.beginPath();
+      sh.points.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
+      g.strokeStyle = col;
+      g.lineWidth = 2.6 * k;
+      g.stroke();
+      for (const p of sh.points) {
+        g.beginPath();
+        g.arc(p.x, p.y, 3.5 * k, 0, Math.PI * 2);
+        g.fillStyle = col;
+        g.fill();
+      }
+      continue;
+    }
     g.beginPath();
-    sh.points.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
-    g.closePath();
+    if (sh.type === 'circle') {
+      g.ellipse(sh.cx, sh.cy, sh.rx, sh.ry, 0, 0, Math.PI * 2);
+    } else {
+      sh.points.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
+      g.closePath();
+    }
     g.fillStyle = hexA(col, 0.18);
     g.fill();
     g.strokeStyle = col;
@@ -1341,10 +1539,11 @@ function exportImage(format = 'png') {
   // 面積ラベル
   for (const sh of pd.shapes) {
     const col = getShapeColor(sh);
-    const ce = centroid(sh.points);
-    const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
+    const isLine = sh.type === 'line';
+    const ce = isLine ? pathMidpoint(sh.points) : centroid(sh.points);
+    const v = mpu != null ? (isLine ? pathLen(sh.points) * mpu : pxArea(sh) * mpu * mpu) : null;
     const l1 = sh.name;
-    const l2 = a == null ? '縮尺未設定' : fmtArea(a) + ' m²';
+    const l2 = v == null ? '縮尺未設定' : fmtArea(v) + (isLine ? ' m' : ' m²');
     g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
     const w2 = g.measureText(l2).width;
     g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
@@ -1357,7 +1556,7 @@ function exportImage(format = 'png') {
     g.fillStyle = '#5b6779';
     g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
     g.fillText(l1, ce.x, ce.y - bh / 2 + 15.5 * k);
-    g.fillStyle = a == null ? '#b8860b' : col;
+    g.fillStyle = v == null ? '#b8860b' : col;
     g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
     g.fillText(l2, ce.x, ce.y - bh / 2 + 32 * k);
     g.textAlign = 'start';
@@ -1420,10 +1619,10 @@ $('btnExport').onclick = () => {
   rows.push(['図面ファイル', S.fileName]);
   rows.push(['出力日時', new Date().toLocaleString('ja-JP')]);
   rows.push([]);
-  rows.push(['ページ', 'No.', '名称', 'カテゴリ', '種類', '頂点数', '面積 (m²)', '面積 (坪)', '備考']);
+  rows.push(['ページ', 'No.', '名称', 'カテゴリ', '種類', '頂点数', '面積 (m²)', '面積 (坪)', '長さ (m)', '備考']);
 
   let grand = 0, anyUncalib = false;
-  const catAgg = new Map(); // catId('' = 未分類) -> {n, a}
+  const catAgg = new Map(); // catId('' = 未分類) -> {n, a}(面積図形のみ)
   const pageNums = Object.keys(S.pages).map(Number).sort((a, b) => a - b);
 
   for (const pn of pageNums) {
@@ -1433,26 +1632,32 @@ $('btnExport').onclick = () => {
     const mpu = c ? c.meters / dist(c.p1, c.p2) : null;
     let sub = 0;
     pd.shapes.forEach((sh, i) => {
-      const a = mpu != null ? polyArea(sh.points) * mpu * mpu : null;
-      if (a != null) { sub += a; grand += a; } else anyUncalib = true;
-      const key = sh.catId || '';
-      const agg = catAgg.get(key) || { n: 0, a: 0 };
-      agg.n++; if (a != null) agg.a += a;
-      catAgg.set(key, agg);
+      const isLine = sh.type === 'line';
+      const a = (!isLine && mpu != null) ? pxArea(sh) * mpu * mpu : null;
+      const len = (isLine && mpu != null) ? pathLen(sh.points) * mpu : null;
+      if (mpu == null) anyUncalib = true;
+      if (a != null) { sub += a; grand += a; }
+      if (!isLine) {
+        const key = sh.catId || '';
+        const agg = catAgg.get(key) || { n: 0, a: 0 };
+        agg.n++; if (a != null) agg.a += a;
+        catAgg.set(key, agg);
+      }
       const catName = sh.catId ? (catById(sh.catId)?.name || '(削除済カテゴリ)') : '(未分類)';
       rows.push([
         pn, i + 1, sh.name, catName,
-        sh.type === 'rect' ? '四角形' : '多角形',
-        sh.points.length,
-        a != null ? round2(a) : '縮尺未設定',
-        a != null ? round2(a / TSUBO) : '',
+        typeName(sh),
+        sh.type === 'circle' ? '—' : sh.points.length,
+        isLine ? '' : (a != null ? round2(a) : '縮尺未設定'),
+        isLine ? '' : (a != null ? round2(a / TSUBO) : ''),
+        isLine ? (len != null ? round2(len) : '縮尺未設定') : '',
         c ? `基準 ${c.label}` : '',
       ]);
     });
-    rows.push([pn, '', `ページ ${pn} 小計`, '', '', '', round2(sub), round2(sub / TSUBO), '']);
+    rows.push([pn, '', `ページ ${pn} 小計`, '', '', '', round2(sub), round2(sub / TSUBO), '', '']);
   }
   rows.push([]);
-  rows.push(['', '', '総合計', '', '', '', round2(grand), round2(grand / TSUBO), anyUncalib ? '※縮尺未設定の図形は合計に含まれません' : '']);
+  rows.push(['', '', '総合計', '', '', '', round2(grand), round2(grand / TSUBO), '', anyUncalib ? '※縮尺未設定の図形は合計に含まれません' : '']);
 
   // カテゴリ別集計(全ページ)
   rows.push([]);
@@ -1467,7 +1672,7 @@ $('btnExport').onclick = () => {
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 7 }, { wch: 5 }, { wch: 20 }, { wch: 18 }, { wch: 9 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  ws['!cols'] = [{ wch: 7 }, { wch: 5 }, { wch: 20 }, { wch: 18 }, { wch: 9 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 30 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '面積算定');
   const base = S.fileName.replace(/\.[^.]+$/, '') || '面積算定';

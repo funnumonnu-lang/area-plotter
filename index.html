@@ -217,11 +217,17 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
 #catAdd{width:100%;border:1px dashed #b9c0cc;background:#fafbf9;border-radius:6px;padding:8px;font-family:var(--sans);font-size:12px;color:var(--ink-2);cursor:pointer;margin-bottom:14px}
 #catAdd:hover{border-color:var(--accent);color:var(--accent)}
 
-#imgMenu{position:fixed;z-index:150;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:5px;display:flex;flex-direction:column;min-width:200px}
-#imgMenu.hidden{display:none}
-#imgMenu button{border:none;background:none;text-align:left;font-family:var(--sans);font-size:12.5px;padding:9px 12px;border-radius:6px;cursor:pointer;color:var(--ink);display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-#imgMenu button:hover{background:#eef0f3}
-#imgMenu button small{color:#8b96a8;font-size:10.5px}
+.modal.exp{width:min(880px,94vw)}
+#expPrev{background:#eceee9;border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;max-height:56vh;overflow:auto}
+#expPrev canvas{max-width:100%;height:auto;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.expCtl{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.sldRow{display:flex;align-items:center;gap:10px}
+.sldRow label{font-size:12px;color:var(--ink-2);width:160px;flex:none}
+.sldRow input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer}
+.sldRow .v{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);width:44px;text-align:right}
+.fmtRow{display:flex;gap:18px;font-size:12.5px;color:var(--ink-2);margin-top:2px}
+.fmtRow label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.fmtRow input{accent-color:var(--accent)}
 
 /* トースト */
 #toast{
@@ -361,10 +367,35 @@ canvas#stage{position:absolute;inset:0;cursor:crosshair;touch-action:none}
   </div>
 </div>
 
-<!-- 画像形式メニュー -->
-<div id="imgMenu" class="hidden">
-  <button id="imgPng">PNG形式 <small>高画質・推奨</small></button>
-  <button id="imgJpg">JPG形式 <small>軽量・メール添付向き</small></button>
+<!-- 画像エクスポート プレビューモーダル -->
+<div class="modalBack hidden" id="expModal">
+  <div class="modal exp">
+    <h3>画像エクスポート — プレビュー</h3>
+    <div id="expPrev"></div>
+    <div class="expCtl">
+      <div class="sldRow">
+        <label>図形名の文字サイズ</label>
+        <input type="range" id="expName" min="0.5" max="3" step="0.1" value="1">
+        <span class="v" id="expNameV">1.0×</span>
+      </div>
+      <div class="sldRow">
+        <label>面積・長さの文字サイズ</label>
+        <input type="range" id="expArea" min="0.5" max="3" step="0.1" value="1">
+        <span class="v" id="expAreaV">1.0×</span>
+      </div>
+      <div class="fmtRow" style="margin-top:0">
+        <label><input type="checkbox" id="expShowName" checked> 図形名を表示する</label>
+      </div>
+      <div class="fmtRow">
+        <label><input type="radio" name="expFmt" value="png" checked> PNG(高画質・推奨)</label>
+        <label><input type="radio" name="expFmt" value="jpg"> JPG(軽量)</label>
+      </div>
+    </div>
+    <div class="btns">
+      <button id="expCancel">キャンセル</button>
+      <button class="ok" id="expDl" style="background:var(--accent);border-color:var(--accent)">⬇ ダウンロード</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -1427,22 +1458,52 @@ function renderCatRows() {
   }
 }
 
-/* ---------- 画像エクスポート ---------- */
-$('btnImg').onclick = e => {
-  e.stopPropagation();
-  const m = $('imgMenu');
-  const r = e.currentTarget.getBoundingClientRect();
-  m.style.top = (r.bottom + 6) + 'px';
-  m.style.left = Math.min(r.left, window.innerWidth - 210) + 'px';
-  m.classList.toggle('hidden');
+/* ---------- 画像エクスポート(プレビュー付き) ---------- */
+let expCanvas = null, expRaf = null;
+$('btnImg').onclick = () => {
+  if (!S.baseCanvas) return;
+  renderExpPreview();
+  $('expModal').classList.remove('hidden');
 };
-document.addEventListener('click', e => {
-  if (!e.target.closest('#imgMenu') && !e.target.closest('#btnImg')) $('imgMenu').classList.add('hidden');
+$('expCancel').onclick = () => $('expModal').classList.add('hidden');
+$('expName').addEventListener('input', queueExpPreview);
+$('expArea').addEventListener('input', queueExpPreview);
+$('expShowName').addEventListener('change', () => {
+  $('expName').disabled = !$('expShowName').checked;
+  queueExpPreview();
 });
-$('imgPng').onclick = () => { $('imgMenu').classList.add('hidden'); exportImage('png'); };
-$('imgJpg').onclick = () => { $('imgMenu').classList.add('hidden'); exportImage('jpg'); };
+function queueExpPreview() { // スライダー操作中の再描画をフレーム単位に間引き
+  if (expRaf) return;
+  expRaf = requestAnimationFrame(() => { expRaf = null; renderExpPreview(); });
+}
+function renderExpPreview() {
+  const ns = +$('expName').value, as = +$('expArea').value;
+  $('expNameV').textContent = ns.toFixed(1) + '×';
+  $('expAreaV').textContent = as.toFixed(1) + '×';
+  expCanvas = renderExportCanvas({ nameScale: ns, areaScale: as, showName: $('expShowName').checked });
+  const box = $('expPrev');
+  box.innerHTML = '';
+  box.appendChild(expCanvas);
+}
+$('expDl').onclick = () => {
+  if (!expCanvas) return;
+  const format = document.querySelector('input[name="expFmt"]:checked').value;
+  const base = S.fileName.replace(/\.[^.]+$/, '') || '面積算定';
+  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  expCanvas.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = `${base}_面積図${S.numPages > 1 ? '_p' + S.pageNum : ''}.${format}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(format.toUpperCase() + '画像を出力しました');
+  }, mime, format === 'jpg' ? 0.92 : undefined);
+  $('expModal').classList.add('hidden');
+};
 
-function exportImage(format = 'png') {
+function renderExportCanvas(opts = {}) {
+  const ns = opts.nameScale || 1, as = opts.areaScale || 1;
+  const showName = opts.showName !== false;
   if (!S.baseCanvas) return;
   const pd = pageData();
   const W = S.baseCanvas.width, H = S.baseCanvas.height;
@@ -1544,21 +1605,29 @@ function exportImage(format = 'png') {
     const v = mpu != null ? (isLine ? pathLen(sh.points) * mpu : pxArea(sh) * mpu * mpu) : null;
     const l1 = sh.name;
     const l2 = v == null ? '縮尺未設定' : fmtArea(v) + (isLine ? ' m' : ' m²');
-    g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
+    const fs1 = 11 * k * ns, fs2 = 13 * k * as;
+    g.font = `600 ${fs2}px "IBM Plex Mono", monospace`;
     const w2 = g.measureText(l2).width;
-    g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
-    const w1 = g.measureText(l1).width;
-    const bw = Math.max(w1, w2) + 20 * k, bh = 40 * k;
-    rr(ce.x - bw / 2, ce.y - bh / 2, bw, bh, 7 * k);
+    let w1 = 0;
+    if (showName) {
+      g.font = `500 ${fs1}px "IBM Plex Sans JP", sans-serif`;
+      w1 = g.measureText(l1).width;
+    }
+    const bw = Math.max(w1, w2) + 20 * k;
+    const bh = (showName ? fs1 * 1.4 : 0) + fs2 * 1.4 + 9 * k;
+    const topY = ce.y - bh / 2;
+    rr(ce.x - bw / 2, topY, bw, bh, Math.min(7 * k, bh / 2));
     g.fillStyle = 'rgba(255,255,255,.93)'; g.fill();
     g.strokeStyle = col; g.lineWidth = 1.4 * k; g.stroke();
     g.textAlign = 'center';
-    g.fillStyle = '#5b6779';
-    g.font = `500 ${11 * k}px "IBM Plex Sans JP", sans-serif`;
-    g.fillText(l1, ce.x, ce.y - bh / 2 + 15.5 * k);
+    if (showName) {
+      g.fillStyle = '#5b6779';
+      g.font = `500 ${fs1}px "IBM Plex Sans JP", sans-serif`;
+      g.fillText(l1, ce.x, topY + 4.5 * k + fs1);
+    }
     g.fillStyle = v == null ? '#b8860b' : col;
-    g.font = `600 ${13 * k}px "IBM Plex Mono", monospace`;
-    g.fillText(l2, ce.x, ce.y - bh / 2 + 32 * k);
+    g.font = `600 ${fs2}px "IBM Plex Mono", monospace`;
+    g.fillText(l2, ce.x, topY + 4.5 * k + (showName ? fs1 * 1.4 : 0) + fs2);
     g.textAlign = 'start';
   }
   // フッター凡例
@@ -1600,16 +1669,7 @@ function exportImage(format = 'png') {
     g.textAlign = 'start';
   }
 
-  const base = S.fileName.replace(/\.[^.]+$/, '') || '面積算定';
-  const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
-  c.toBlob(b => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = `${base}_面積図${S.numPages > 1 ? '_p' + S.pageNum : ''}.${format}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    toast(format.toUpperCase() + '画像を出力しました');
-  }, mime, format === 'jpg' ? 0.92 : undefined);
+  return c;
 }
 
 /* ---------- Excelエクスポート ---------- */
